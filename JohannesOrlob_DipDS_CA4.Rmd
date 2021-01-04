@@ -1,0 +1,131 @@
+---
+title: "JohannesOrlob_DipDS_CA4"
+author: "Johannes Orlob"
+date: "1/2/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#load data
+``` {r}
+library(readxl)
+data <- read_excel("Metro_Interstate_Traffic.xlsx")
+``` 
+
+#check dataset for n/a
+``` {r}
+apply(data,2,function(x) sum(is.na(x)))
+``` 
+#get dummy variables for day_time
+``` {r}
+library(fastDummies)
+data <- dummy_columns(data)
+```
+#create Vector of Column Max and Min Values
+``` {r}
+maxs <- apply(data[,4:13], 2, max)
+mins <- apply(data[,4:13], 2, min) 
+```
+
+#check new dataset for n/a
+``` {r}
+apply(data,2,function(x) sum(is.na(x)))
+```
+
+#use scale() and convert the resulting matrix to a data frame
+``` {r}
+scaled.data <- as.data.frame(scale(data[,4:13],center = mins, scale =
+                                     maxs - mins))
+```
+#check out results
+``` {r}
+print(head(scaled.data,2))
+
+library(caTools)
+set.seed(101)
+
+data_new <- scaled.data
+```
+#create Split
+``` {r}
+split = sample.split(data_new$temp, SplitRatio = 0.70)
+```
+#split based off of split Boolean Vector
+``` {r}
+train = subset(data_new, split == TRUE)
+test = subset(data_new, split == FALSE) 
+```
+#create fromula for neural net
+``` {r}
+feats <- list("holiday", "temp", "rain_1h", "snow_1h", "clouds_all","day_time_0_to_5", "day_time_6_to_11",
+                "day_time_12_to_17", "day_time_18_to_23")
+```
+#concatenate strings
+``` {r}
+f <- paste(feats,collapse=' + ')
+f <- paste('traffic_volume ~',f)
+```
+#convert to formula
+``` {r}
+f <- as.formula(f)
+f
+```
+#create neural net
+``` {r}
+library(neuralnet)
+nn <- neuralnet(f,train,hidden=c(10,8,6,6,4,2),algorithm = "sag", act.fct="tanh", threshold = 0.15, rep =3, linear.output=T)
+```
+#choice of algorithm
+The reason i choose algorithm = ’sag’ as it adjusts the weights of the neurons to in order to achieve the best end result while adjusting the learning rate.
+
+The reason for using "tanh" as the activiation function as its the simialar to logistic but deals better with neutreal and strong postive data. Which was at hand here. The threshold was set at 0.15 to make the model run faster. Finaly the output was set to true as it is a regression problem.
+
+#plot the neural network
+``` {r fig.height = 12, fig.width = 24, fig.align = "center"}
+plot(nn, rep="best")
+```
+
+#compute the predictions on test
+``` {r}
+predicted.nn.values <- compute(nn,test[1:10]) 
+```
+#scale back the results and test
+``` {r}
+pr.nn_ <- predicted.nn.values$net.result*(max(data$traffic_volume)-min(data$traffic_volume))+min(data$traffic_volume)
+test.r <- (test$traffic_volume)*(max(data$traffic_volume)-min(data$traffic_volume))+min(data$traffic_volume)
+```
+#compute the mean square error
+``` {r}
+MSE.nn <- sum((test.r - pr.nn_)^2)/nrow(test)
+
+print(paste0("Mean square error of: ", MSE.nn))
+```
+#plot the real vs predicted values
+``` {r fig.align = "center"}
+par(mfrow=c(1,2)) 
+plot(test.r,pr.nn_,col='red',main='Real vs predicted Values',pch=18,cex=0.7)
+abline(0,1,lwd=2)
+```
+
+#print question
+``` {r}
+print("Question: What's the trafic volume on 27.09.2018 at 12:00?")
+```
+#select the column for the questions and predict using the nn
+``` {r}
+df.question <- scaled.data[32196, ]
+```
+#compute prediction
+``` {r}
+pr.answer <- compute(nn,df.question[1:10])
+```
+#scale back answer to get a real world result
+``` {r}
+pr.answer <- pr.answer$net.result*(max(data$traffic_volume)-min(data$traffic_volume))+min(data$traffic_volume)
+```
+#print answer
+``` {r}
+print(paste0("Answer: ", pr.answer))
+```
